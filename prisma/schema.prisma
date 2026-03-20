@@ -1,0 +1,473 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User Roles
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+// Transport Types
+enum TransportType {
+  BUS
+  TRAIN
+  LAUNCH
+  AIR
+}
+
+// Bus Class Types
+enum BusClassType {
+  NON_AC_ECONOMY
+  NON_AC_BUSINESS
+  AC_ECONOMY
+  AC_BUSINESS
+  SLEEPER
+  SUIT_CLASS_BUSINESS
+  SUIT_CLASS_SLEEPER
+}
+
+// Train Class Types
+enum TrainClassType {
+  AC_B
+  AC_S
+  SNIGDHA
+  F_BERTH
+  F_SEAT
+  F_CHAIR
+  S_CHAIR
+  SHOVAN
+  SHULOV
+  AC_CHAIR
+}
+
+// Launch Class Types
+enum LaunchClassType {
+  STANDING
+  NON_AC_SEAT
+  AC_SEAT
+  NON_AC_CABIN
+  AC_CABIN
+  VIP_CABIN
+}
+
+// Air Class Types
+enum AirClassType {
+  ECONOMY
+  PREMIUM_ECONOMY
+  BUSINESS
+  FIRST_CLASS
+}
+
+// Sleeper Position
+enum SleeperPosition {
+  UPPER_DECK
+  LOWER_DECK
+}
+
+// Ticket Delivery Type
+enum DeliveryType {
+  ONLINE_PAYMENT
+  IN_PERSON
+  COURIER
+}
+
+// Courier Services
+enum CourierService {
+  PATHAO
+  STEADFAST
+  REDEX
+  PAPERFLY
+  ECOURIER
+  CARRYBEE
+}
+
+// Courier Fee Paid By
+enum CourierFeePaidBy {
+  BUYER
+  SELLER
+}
+
+// Ticket Status
+enum TicketStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SOLD
+  EXPIRED
+}
+
+// Transaction Status
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  CANCELED
+  FAILED
+}
+
+// Payment Method
+enum PaymentMethod {
+  BKASH
+  NAGAD
+  UPAY
+  SSLCOMMERZ
+  UDDOKTAPAY
+  PIPRAPAY
+}
+
+// ID Document Type
+enum IdDocumentType {
+  NID
+  DRIVING_LICENSE
+  PASSPORT
+}
+
+// ID Verification Status
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Report Status
+enum ReportStatus {
+  PENDING
+  PROCESSING
+  RESOLVED
+  REJECTED
+}
+
+// Withdraw Status
+enum WithdrawStatus {
+  PENDING
+  APPROVED
+  COMPLETED
+  REJECTED
+}
+
+// Wallet Account Type
+enum WalletAccountType {
+  BKASH
+  NAGAD
+  ROCKET
+  UPAY
+  BANK_TRANSFER
+}
+
+// User Model
+model User {
+  id                    String              @id @default(cuid())
+  email                 String              @unique
+  phone                 String?
+  password              String
+  name                  String?
+  profileImage          String?
+  address               String?
+  role                  UserRole            @default(USER)
+  isVerified            Boolean             @default(false)
+  isEmailVerified       Boolean             @default(false)
+  isActive              Boolean             @default(true)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  
+  // Relations
+  tickets               Ticket[]
+  purchases             Transaction[]       @relation("BuyerTransactions")
+  sales                 Transaction[]       @relation("SellerTransactions")
+  idVerifications       IdVerification[]
+  reports               Report[]
+  wallet                Wallet?
+  withdrawRequests      WithdrawRequest[]
+  otpCodes              OtpCode[]
+}
+
+// OTP Code for email verification
+model OtpCode {
+  id          String    @id @default(cuid())
+  email       String
+  code        String
+  type        String    // "email_verification", "password_reset"
+  expiresAt   DateTime
+  isUsed      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  user        User?     @relation(fields: [userId], references: [id])
+  userId      String?
+}
+
+// ID Verification
+model IdVerification {
+  id              String            @id @default(cuid())
+  userId          String
+  documentType    IdDocumentType
+  frontImage      String?
+  backImage       String?
+  status          VerificationStatus @default(PENDING)
+  rejectionReason String?
+  verifiedAt      DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  user            User              @relation(fields: [userId], references: [id])
+}
+
+// Ticket Model
+model Ticket {
+  id                    String            @id @default(cuid())
+  sellerId              String
+  
+  // Transport Details
+  transportType         TransportType
+  transportCompany      String
+  pnrNumber             String
+  
+  // Route Details
+  fromCity              String
+  toCity                String
+  
+  // Travel Details
+  travelDate            DateTime
+  departureTime         String
+  seatNumber            String
+  
+  // Class Types (stored as strings for flexibility)
+  classType             String
+  
+  // Sleeper Position (for bus only)
+  sleeperPosition       SleeperPosition?
+  
+  // Pricing
+  originalPrice         Float
+  sellingPrice          Float
+  
+  // Images
+  ticketImage           String?
+  ticketPdf             String?
+  
+  // Description
+  notes                 String?
+  
+  // Delivery
+  deliveryType          DeliveryType
+  location              String?           // For In Person
+  courierService        CourierService?   // For Courier
+  courierFeePaidBy      CourierFeePaidBy? // For Courier
+  courierFee            Float?
+  
+  // Status
+  status                TicketStatus      @default(PENDING)
+  
+  // Admin fields
+  rejectionReason       String?
+  approvedAt            DateTime?
+  
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  
+  // Relations
+  seller                User              @relation(fields: [sellerId], references: [id])
+  transactions          Transaction[]
+  reports               Report[]
+}
+
+// Transaction Model
+model Transaction {
+  id                    String            @id @default(cuid())
+  ticketId              String
+  buyerId               String
+  sellerId              String
+  
+  // Buyer Info
+  buyerName             String
+  buyerPhone            String
+  buyerEmail            String
+  buyerAddress          String
+  
+  // Pricing
+  ticketPrice           Float
+  platformFee           Float             // 1% minimum 10 BDT
+  totalAmount           Float
+  courierFee            Float?
+  
+  // Payment
+  paymentMethod         PaymentMethod
+  deliveryType          DeliveryType
+  status                TransactionStatus @default(PENDING)
+  
+  // Transaction Details
+  transactionId         String?
+  invoiceNumber         String            @unique
+  
+  // Seller Payment Status
+  sellerPaid            Boolean           @default(false)
+  sellerPaidAt          DateTime?
+  
+  // Confirmation
+  sellerConfirmedAt     DateTime?
+  
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  
+  // Relations
+  ticket                Ticket            @relation(fields: [ticketId], references: [id])
+  buyer                 User              @relation("BuyerTransactions", fields: [buyerId], references: [id])
+  seller                User              @relation("SellerTransactions", fields: [sellerId], references: [id])
+}
+
+// Report Model
+model Report {
+  id              String        @id @default(cuid())
+  ticketId        String
+  reporterId      String
+  reason          String
+  description     String?
+  status          ReportStatus  @default(PENDING)
+  adminNotes      String?
+  resolvedAt      DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  ticket          Ticket        @relation(fields: [ticketId], references: [id])
+  reporter        User          @relation(fields: [reporterId], references: [id])
+}
+
+// Wallet Model
+model Wallet {
+  id                String      @id @default(cuid())
+  userId            String      @unique
+  availableBalance  Float       @default(0)
+  pendingBalance    Float       @default(0)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  
+  user              User        @relation(fields: [userId], references: [id])
+  accounts          WalletAccount[]
+  withdrawRequests  WithdrawRequest[]
+}
+
+// Wallet Account Model
+model WalletAccount {
+  id              String            @id @default(cuid())
+  walletId        String
+  accountType     WalletAccountType
+  accountName     String?
+  accountNumber   String?
+  bankName        String?
+  branchName      String?
+  routingNumber   String?
+  swiftCode       String?
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  wallet          Wallet            @relation(fields: [walletId], references: [id])
+}
+
+// Withdraw Request Model
+model WithdrawRequest {
+  id              String          @id @default(cuid())
+  walletId        String
+  userId          String
+  amount          Float
+  accountType     WalletAccountType
+  accountId       String?
+  status          WithdrawStatus  @default(PENDING)
+  rejectionReason String?
+  processedAt     DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  
+  wallet          Wallet          @relation(fields: [walletId], references: [id])
+  user            User            @relation(fields: [userId], references: [id])
+}
+
+// System Settings Model
+model SystemSetting {
+  id            String    @id @default(cuid())
+  key           String    @unique
+  value         String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// City Model for routes
+model City {
+  id          String    @id @default(cuid())
+  name        String
+  nameBn      String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// Popular Route Model
+model PopularRoute {
+  id          String    @id @default(cuid())
+  fromCity    String
+  toCity      String
+  transportType TransportType?
+  isActive    Boolean   @default(true)
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// Email Template Model
+model EmailTemplate {
+  id            String    @id @default(cuid())
+  name          String    @unique
+  displayName   String    // Human readable name
+  category      String    // 'admin' or 'user'
+  subject       String
+  title         String
+  body          String    // HTML body
+  footerText    String?
+  copyrightText String?
+  variables     String?   // JSON string of variable names
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// Payment Gateway Settings
+model PaymentGateway {
+  id            String    @id @default(cuid())
+  name          String    @unique  // bkash, nagad, uddoktapay, piprapay
+  isEnabled     Boolean   @default(false)
+  isSandbox     Boolean   @default(true)
+  credentials   String?   // JSON string of credentials
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// SMS Gateway Settings
+model SMSGateway {
+  id            String    @id @default(cuid())
+  name          String    @unique  // alphasms, bulksmsbd, twilio
+  isEnabled     Boolean   @default(false)
+  isSandbox     Boolean   @default(true)
+  credentials   String?   // JSON string of credentials
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// SMS Template Model
+model SMSTemplate {
+  id            String    @id @default(cuid())
+  name          String    @unique
+  displayName   String    // Human readable name
+  category      String    // 'admin' or 'user'
+  body          String    // SMS body content
+  variables     String?   // JSON string of variable names
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
