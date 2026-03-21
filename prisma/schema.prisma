@@ -74,9 +74,15 @@ enum SleeperPosition {
   LOWER_DECK
 }
 
+// Ticket Type (Online Copy or Counter Copy)
+enum TicketType {
+  ONLINE_COPY
+  COUNTER_COPY
+}
+
 // Ticket Delivery Type
 enum DeliveryType {
-  ONLINE_PAYMENT
+  ONLINE_DELIVERY
   IN_PERSON
   COURIER
 }
@@ -222,7 +228,11 @@ model IdVerification {
 // Ticket Model
 model Ticket {
   id                    String            @id @default(cuid())
+  ticketId              String            @unique  // TKT-1001, TKT-1002, etc. (sequential)
   sellerId              String
+  
+  // Ticket Type
+  ticketType            TicketType        @default(COUNTER_COPY)
   
   // Transport Details
   transportType         TransportType
@@ -470,4 +480,11 @@ model SMSTemplate {
   isActive      Boolean   @default(true)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+}
+
+// Ticket Counter for Sequential IDs
+model TicketCounter {
+  id          String    @id @default("ticket_counter")
+  lastNumber  Int       @default(1000)  // Starts from 1000, so first ticket is TKT-1001
+  updatedAt   DateTime  @updatedAt
 }

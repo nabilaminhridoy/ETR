@@ -9,7 +9,8 @@ export async function GET() {
         key: {
           in: [
             'login_otp_enabled',
-            'login_otp_provider',
+            'login_email_otp_provider',
+            'login_sms_otp_provider',
             'login_otp_expiry',
             'login_max_otp_attempts',
             'login_social_enabled',
@@ -18,6 +19,7 @@ export async function GET() {
             'login_registration_enabled',
             'login_email_verification_required',
             'login_phone_verification_required',
+            'login_otp_delivery_method',
             'login_password_min_length',
             'login_password_require_uppercase',
             'login_password_require_lowercase',
@@ -31,7 +33,8 @@ export async function GET() {
     // Default values
     const loginSettings: Record<string, string | boolean> = {
       otpEnabled: true,
-      otpProvider: 'twilio',
+      emailOtpProvider: 'email',
+      smsOtpProvider: 'alphasms',
       otpExpiry: '5',
       maxOtpAttempts: '3',
       socialLoginEnabled: true,
@@ -40,6 +43,7 @@ export async function GET() {
       registrationEnabled: true,
       emailVerificationRequired: true,
       phoneVerificationRequired: true,
+      otpDeliveryMethod: 'both',
       passwordMinLength: '8',
       passwordRequireUppercase: true,
       passwordRequireLowercase: true,
@@ -52,8 +56,11 @@ export async function GET() {
         case 'login_otp_enabled':
           loginSettings.otpEnabled = setting.value === 'true'
           break
-        case 'login_otp_provider':
-          loginSettings.otpProvider = setting.value
+        case 'login_email_otp_provider':
+          loginSettings.emailOtpProvider = setting.value
+          break
+        case 'login_sms_otp_provider':
+          loginSettings.smsOtpProvider = setting.value
           break
         case 'login_otp_expiry':
           loginSettings.otpExpiry = setting.value
@@ -78,6 +85,9 @@ export async function GET() {
           break
         case 'login_phone_verification_required':
           loginSettings.phoneVerificationRequired = setting.value === 'true'
+          break
+        case 'login_otp_delivery_method':
+          loginSettings.otpDeliveryMethod = setting.value
           break
         case 'login_password_min_length':
           loginSettings.passwordMinLength = setting.value
@@ -111,7 +121,8 @@ export async function POST(request: NextRequest) {
 
     const settingsMap: Record<string, string> = {
       otpEnabled: 'login_otp_enabled',
-      otpProvider: 'login_otp_provider',
+      emailOtpProvider: 'login_email_otp_provider',
+      smsOtpProvider: 'login_sms_otp_provider',
       otpExpiry: 'login_otp_expiry',
       maxOtpAttempts: 'login_max_otp_attempts',
       socialLoginEnabled: 'login_social_enabled',
@@ -120,6 +131,7 @@ export async function POST(request: NextRequest) {
       registrationEnabled: 'login_registration_enabled',
       emailVerificationRequired: 'login_email_verification_required',
       phoneVerificationRequired: 'login_phone_verification_required',
+      otpDeliveryMethod: 'login_otp_delivery_method',
       passwordMinLength: 'login_password_min_length',
       passwordRequireUppercase: 'login_password_require_uppercase',
       passwordRequireLowercase: 'login_password_require_lowercase',

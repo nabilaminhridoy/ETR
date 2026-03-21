@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import React from 'react'
 
 interface User {
   id: string
@@ -15,13 +16,15 @@ interface User {
 interface AuthState {
   user: User | null
   token: string | null
+  expiresAt: number | null
   isAuthenticated: boolean
   isLoading: boolean
   setUser: (user: User | null) => void
   setToken: (token: string | null) => void
-  login: (user: User, token: string) => void
+  login: (user: User, token: string, expiresAt?: number) => void
   logout: () => void
   setLoading: (loading: boolean) => void
+  isTokenValid: () => boolean
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -29,23 +32,31 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       token: null,
+      expiresAt: null,
       isAuthenticated: false,
       isLoading: true, // Start with loading true until we check localStorage
       setUser: (user) => set({ user, isAuthenticated: !!user }),
       setToken: (token) => set({ token }),
-      login: (user, token) => set({ 
+      login: (user, token, expiresAt) => set({ 
         user, 
         token, 
+        expiresAt: expiresAt || null,
         isAuthenticated: true, 
         isLoading: false,
       }),
       logout: () => set({ 
         user: null, 
         token: null, 
+        expiresAt: null,
         isAuthenticated: false, 
         isLoading: false,
       }),
       setLoading: (loading) => set({ isLoading: loading }),
+      isTokenValid: () => {
+        const { expiresAt, isAuthenticated } = get()
+        if (!isAuthenticated || !expiresAt) return false
+        return Date.now() < expiresAt
+      },
     }),
     {
       name: 'auth-storage',
@@ -53,11 +64,20 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         user: state.user,
         token: state.token,
+        expiresAt: state.expiresAt,
         isAuthenticated: state.isAuthenticated,
       }),
       onRehydrateStorage: () => (state) => {
-        // After rehydration, set loading to false
+        // After rehydration, check token expiry and set loading to false
         if (state) {
+          // Check if token has expired
+          if (state.expiresAt && Date.now() >= state.expiresAt) {
+            // Token expired, clear auth state
+            state.user = null
+            state.token = null
+            state.expiresAt = null
+            state.isAuthenticated = false
+          }
           state.isLoading = false
         }
       },
@@ -86,8 +106,6 @@ export const useAuthStoreHydration = () => {
   
   return hasHydrated
 }
-
-import React from 'react'
 
 // UI State Store
 interface UIState {

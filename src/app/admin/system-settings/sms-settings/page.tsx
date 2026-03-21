@@ -11,22 +11,18 @@ import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, MessageSquare, CheckCircle2, XCircle, Eye, EyeOff, Key, Send, AlertCircle, ExternalLink, RefreshCw } from 'lucide-react'
+import { Loader2, MessageSquare, CheckCircle2, XCircle, Eye, EyeOff, Key, Send, AlertCircle, ExternalLink, RefreshCw, Wallet } from 'lucide-react'
 
 interface AlphaSMSConfig {
   isEnabled: boolean
-  isSandbox: boolean
   apiKey: string
   senderId: string
-  baseUrl: string
 }
 
 interface BulkSMSBDConfig {
   isEnabled: boolean
-  isSandbox: boolean
   apiKey: string
   senderId: string
-  baseUrl: string
 }
 
 interface TwilioConfig {
@@ -45,21 +41,18 @@ export default function SMSSettingsPage() {
   const [showCredentials, setShowCredentials] = useState<Record<string, boolean>>({})
   const [testPhone, setTestPhone] = useState('')
   const [testMessage, setTestMessage] = useState('Test message from EidTicketResell')
+  const [isSendingTest, setIsSendingTest] = useState(false)
 
   const [alphaSMSForm, setAlphaSMSForm] = useState<AlphaSMSConfig>({
     isEnabled: false,
-    isSandbox: true,
     apiKey: '',
     senderId: '8809617613541',
-    baseUrl: 'https://api.alphasms.net/index.php?app=ws'
   })
 
   const [bulkSMSBDForm, setBulkSMSBDForm] = useState<BulkSMSBDConfig>({
     isEnabled: false,
-    isSandbox: true,
     apiKey: '',
     senderId: '8809617613541',
-    baseUrl: 'https://bulksmsbd.net/api'
   })
 
   const [twilioForm, setTwilioForm] = useState<TwilioConfig>({
@@ -71,9 +64,59 @@ export default function SMSSettingsPage() {
     baseUrl: 'https://api.twilio.com/2010-04-01/Accounts'
   })
 
+  const [alphaBalance, setAlphaBalance] = useState<string | null>(null)
+  const [bulkBalance, setBulkBalance] = useState<string | null>(null)
+  const [isLoadingAlphaBalance, setIsLoadingAlphaBalance] = useState(false)
+  const [isLoadingBulkBalance, setIsLoadingBulkBalance] = useState(false)
+
   useEffect(() => {
     loadConfigs()
   }, [])
+
+  // Auto-load balances when configs are loaded
+  useEffect(() => {
+    if (alphaSMSForm.apiKey) {
+      fetchAlphaBalance(alphaSMSForm.apiKey)
+    }
+  }, [alphaSMSForm.apiKey])
+
+  useEffect(() => {
+    if (bulkSMSBDForm.apiKey) {
+      fetchBulkBalance(bulkSMSBDForm.apiKey)
+    }
+  }, [bulkSMSBDForm.apiKey])
+
+  const fetchAlphaBalance = async (apiKey: string) => {
+    if (!apiKey) return
+    setIsLoadingAlphaBalance(true)
+    try {
+      const response = await fetch('/api/admin/sms-gateways/balance?gateway=alphasms&apiKey=' + apiKey)
+      const data = await response.json()
+      if (response.ok && data.balance) {
+        setAlphaBalance(data.balance)
+      }
+    } catch (error) {
+      console.error('Error fetching Alpha SMS balance:', error)
+    } finally {
+      setIsLoadingAlphaBalance(false)
+    }
+  }
+
+  const fetchBulkBalance = async (apiKey: string) => {
+    if (!apiKey) return
+    setIsLoadingBulkBalance(true)
+    try {
+      const response = await fetch('/api/admin/sms-gateways/balance?gateway=bulksmsbd&apiKey=' + apiKey)
+      const data = await response.json()
+      if (response.ok && data.balance) {
+        setBulkBalance(data.balance)
+      }
+    } catch (error) {
+      console.error('Error fetching BulkSMSBD balance:', error)
+    } finally {
+      setIsLoadingBulkBalance(false)
+    }
+  }
 
   const loadConfigs = async () => {
     setIsLoading(true)
@@ -85,20 +128,16 @@ export default function SMSSettingsPage() {
         if (data.gateways?.alphasms) {
           setAlphaSMSForm({
             isEnabled: data.gateways.alphasms.isEnabled || false,
-            isSandbox: data.gateways.alphasms.isSandbox !== false,
             apiKey: data.gateways.alphasms.credentials?.apiKey || '',
             senderId: data.gateways.alphasms.credentials?.senderId || '8809617613541',
-            baseUrl: data.gateways.alphasms.credentials?.baseUrl || 'https://api.alphasms.net/index.php?app=ws'
           })
         }
 
         if (data.gateways?.bulksmsbd) {
           setBulkSMSBDForm({
             isEnabled: data.gateways.bulksmsbd.isEnabled || false,
-            isSandbox: data.gateways.bulksmsbd.isSandbox !== false,
             apiKey: data.gateways.bulksmsbd.credentials?.apiKey || '',
             senderId: data.gateways.bulksmsbd.credentials?.senderId || '8809617613541',
-            baseUrl: data.gateways.bulksmsbd.credentials?.baseUrl || 'https://bulksmsbd.net/api'
           })
         }
 
@@ -129,11 +168,9 @@ export default function SMSSettingsPage() {
         body: JSON.stringify({
           gateway: 'alphasms',
           isEnabled: alphaSMSForm.isEnabled,
-          isSandbox: alphaSMSForm.isSandbox,
           credentials: {
             apiKey: alphaSMSForm.apiKey,
             senderId: alphaSMSForm.senderId,
-            baseUrl: alphaSMSForm.baseUrl
           }
         })
       })
@@ -144,6 +181,10 @@ export default function SMSSettingsPage() {
           title: 'Alpha SMS Configuration Saved',
           description: 'Your Alpha SMS gateway settings have been saved successfully.'
         })
+        // Refresh balance after saving
+        if (alphaSMSForm.apiKey) {
+          fetchAlphaBalance(alphaSMSForm.apiKey)
+        }
       } else {
         toast({
           title: 'Error',
@@ -171,11 +212,9 @@ export default function SMSSettingsPage() {
         body: JSON.stringify({
           gateway: 'bulksmsbd',
           isEnabled: bulkSMSBDForm.isEnabled,
-          isSandbox: bulkSMSBDForm.isSandbox,
           credentials: {
             apiKey: bulkSMSBDForm.apiKey,
             senderId: bulkSMSBDForm.senderId,
-            baseUrl: bulkSMSBDForm.baseUrl
           }
         })
       })
@@ -186,6 +225,10 @@ export default function SMSSettingsPage() {
           title: 'BulkSMSBD Configuration Saved',
           description: 'Your BulkSMSBD gateway settings have been saved successfully.'
         })
+        // Refresh balance after saving
+        if (bulkSMSBDForm.apiKey) {
+          fetchBulkBalance(bulkSMSBDForm.apiKey)
+        }
       } else {
         toast({
           title: 'Error',
@@ -247,8 +290,104 @@ export default function SMSSettingsPage() {
     }
   }
 
+  const handleCheckAlphaBalance = async () => {
+    if (!alphaSMSForm.apiKey) {
+      toast({
+        title: 'Error',
+        description: 'Please enter your API Key first',
+        variant: 'destructive'
+      })
+      return
+    }
+    await fetchAlphaBalance(alphaSMSForm.apiKey)
+    if (alphaBalance) {
+      toast({
+        title: 'Balance Retrieved',
+        description: `Your Alpha SMS balance: ${alphaBalance} BDT`
+      })
+    }
+  }
+
+  const handleCheckBulkBalance = async () => {
+    if (!bulkSMSBDForm.apiKey) {
+      toast({
+        title: 'Error',
+        description: 'Please enter your API Key first',
+        variant: 'destructive'
+      })
+      return
+    }
+    await fetchBulkBalance(bulkSMSBDForm.apiKey)
+    if (bulkBalance) {
+      toast({
+        title: 'Balance Retrieved',
+        description: `Your BulkSMSBD balance: ${bulkBalance}`
+      })
+    }
+  }
+
+  const handleSendTestSMS = async () => {
+    if (!testPhone || !testMessage) {
+      toast({
+        title: 'Error',
+        description: 'Please enter phone number and message',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    setIsSendingTest(true)
+    try {
+      const response = await fetch('/api/admin/sms-gateways/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: testPhone,
+          message: testMessage
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        toast({
+          title: 'Test SMS Sent',
+          description: `SMS sent successfully to ${testPhone} via ${data.gateway}`
+        })
+      } else {
+        toast({
+          title: 'Error',
+          description: data.error || 'Failed to send test SMS',
+          variant: 'destructive'
+        })
+      }
+    } catch {
+      toast({
+        title: 'Error',
+        description: 'Failed to send test SMS',
+        variant: 'destructive'
+      })
+    } finally {
+      setIsSendingTest(false)
+    }
+  }
+
   const toggleShowCredential = (field: string) => {
     setShowCredentials(prev => ({ ...prev, [field]: !prev[field] }))
+  }
+
+  // Check if any gateway has credentials entered (for test SMS)
+  const hasConfiguredGateway = 
+    !!alphaSMSForm.apiKey ||
+    (!!bulkSMSBDForm.apiKey && !!bulkSMSBDForm.senderId) ||
+    (!!twilioForm.accountSid && !!twilioForm.fromNumber)
+
+  // Get which gateway will be used for test SMS
+  const getActiveGatewayName = () => {
+    if (alphaSMSForm.apiKey) return 'Alpha SMS'
+    if (bulkSMSBDForm.apiKey && bulkSMSBDForm.senderId) return 'BulkSMSBD'
+    if (twilioForm.accountSid && twilioForm.fromNumber) return 'Twilio'
+    return null
   }
 
   if (isLoading) {
@@ -298,6 +437,7 @@ export default function SMSSettingsPage() {
           </TabsTrigger>
         </TabsList>
 
+        {/* Alpha SMS Tab */}
         <TabsContent value="alphasms">
           <Card>
             <CardHeader>
@@ -305,7 +445,7 @@ export default function SMSSettingsPage() {
                 <div>
                   <CardTitle className="text-lg flex items-center gap-2">
                     <MessageSquare className="w-5 h-5" />
-                    Alpha SMS
+                    Alpha SMS (sms.net.bd)
                   </CardTitle>
                   <CardDescription>Bangladesh SMS gateway with competitive rates</CardDescription>
                 </div>
@@ -330,20 +470,21 @@ export default function SMSSettingsPage() {
                     {alphaSMSForm.isEnabled ? 'Gateway Active' : 'Gateway Inactive'}
                   </span>
                 </div>
-                <Badge variant={alphaSMSForm.isSandbox ? 'secondary' : 'default'}>
-                  {alphaSMSForm.isSandbox ? 'Sandbox Mode' : 'Production Mode'}
-                </Badge>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between p-4 border rounded-lg gap-4">
-                <div>
-                  <Label className="font-semibold">Sandbox Mode</Label>
-                  <p className="text-sm text-muted-foreground">Enable for testing. Disable for production.</p>
+                {/* Always show balance section */}
+                <div className="flex items-center gap-2">
+                  <Wallet className="w-4 h-4 text-muted-foreground" />
+                  {isLoadingAlphaBalance ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : alphaBalance ? (
+                    <Badge variant="outline" className="text-green-600 border-green-600 font-semibold">
+                      Balance: {alphaBalance} BDT
+                    </Badge>
+                  ) : alphaSMSForm.apiKey ? (
+                    <span className="text-sm text-muted-foreground">Balance: Unable to fetch</span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Balance: --</span>
+                  )}
                 </div>
-                <Switch
-                  checked={alphaSMSForm.isSandbox}
-                  onCheckedChange={(checked) => setAlphaSMSForm({ ...alphaSMSForm, isSandbox: checked })}
-                />
               </div>
 
               <div className="space-y-4">
@@ -354,12 +495,12 @@ export default function SMSSettingsPage() {
                 <p className="text-sm text-muted-foreground">
                   Get your API credentials from Alpha SMS dashboard.{' '}
                   <a
-                    href="https://alphasms.net/docs/"
+                    href="https://sms.net.bd/"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary hover:underline inline-flex items-center gap-1"
                   >
-                    View Documentation <ExternalLink className="w-3 h-3" />
+                    Visit sms.net.bd <ExternalLink className="w-3 h-3" />
                   </a>
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -385,20 +526,13 @@ export default function SMSSettingsPage() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Sender ID</Label>
+                    <Label>Sender ID (Optional)</Label>
                     <Input
                       value={alphaSMSForm.senderId}
                       onChange={(e) => setAlphaSMSForm({ ...alphaSMSForm, senderId: e.target.value })}
                       placeholder="8809617613541"
                     />
-                  </div>
-                  <div className="space-y-2 md:col-span-2">
-                    <Label>Base URL</Label>
-                    <Input
-                      value={alphaSMSForm.baseUrl}
-                      onChange={(e) => setAlphaSMSForm({ ...alphaSMSForm, baseUrl: e.target.value })}
-                      placeholder="https://api.alphasms.net/index.php?app=ws"
-                    />
+                    <p className="text-xs text-muted-foreground">Your approved Sender ID from Alpha SMS</p>
                   </div>
                 </div>
               </div>
@@ -418,11 +552,31 @@ export default function SMSSettingsPage() {
                     'Save Configuration'
                   )}
                 </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleCheckAlphaBalance}
+                  disabled={!alphaSMSForm.apiKey || isLoadingAlphaBalance}
+                >
+                  {isLoadingAlphaBalance ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : null}
+                  Refresh Balance
+                </Button>
               </div>
+
+              {/* API Info */}
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>API Endpoint:</strong> https://api.sms.net.bd/sendsms<br/>
+                  <strong>Phone Format:</strong> 01XXXXXXXXX or 8801XXXXXXXXX
+                </AlertDescription>
+              </Alert>
             </CardContent>
           </Card>
         </TabsContent>
 
+        {/* BulkSMSBD Tab */}
         <TabsContent value="bulksmsbd">
           <Card>
             <CardHeader>
@@ -455,20 +609,21 @@ export default function SMSSettingsPage() {
                     {bulkSMSBDForm.isEnabled ? 'Gateway Active' : 'Gateway Inactive'}
                   </span>
                 </div>
-                <Badge variant={bulkSMSBDForm.isSandbox ? 'secondary' : 'default'}>
-                  {bulkSMSBDForm.isSandbox ? 'Sandbox Mode' : 'Production Mode'}
-                </Badge>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between p-4 border rounded-lg gap-4">
-                <div>
-                  <Label className="font-semibold">Sandbox Mode</Label>
-                  <p className="text-sm text-muted-foreground">Enable for testing. Disable for production.</p>
+                {/* Always show balance section */}
+                <div className="flex items-center gap-2">
+                  <Wallet className="w-4 h-4 text-muted-foreground" />
+                  {isLoadingBulkBalance ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : bulkBalance ? (
+                    <Badge variant="outline" className="text-green-600 border-green-600 font-semibold">
+                      Balance: {bulkBalance}
+                    </Badge>
+                  ) : bulkSMSBDForm.apiKey ? (
+                    <span className="text-sm text-muted-foreground">Balance: Unable to fetch</span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Balance: --</span>
+                  )}
                 </div>
-                <Switch
-                  checked={bulkSMSBDForm.isSandbox}
-                  onCheckedChange={(checked) => setBulkSMSBDForm({ ...bulkSMSBDForm, isSandbox: checked })}
-                />
               </div>
 
               <div className="space-y-4">
@@ -476,6 +631,17 @@ export default function SMSSettingsPage() {
                   <Key className="w-4 h-4" />
                   API Configuration
                 </h3>
+                <p className="text-sm text-muted-foreground">
+                  Get your API credentials from BulkSMSBD dashboard.{' '}
+                  <a
+                    href="https://bulksmsbd.net/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center gap-1"
+                  >
+                    Visit bulksmsbd.net <ExternalLink className="w-3 h-3" />
+                  </a>
+                </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>API Key</Label>
@@ -505,14 +671,7 @@ export default function SMSSettingsPage() {
                       onChange={(e) => setBulkSMSBDForm({ ...bulkSMSBDForm, senderId: e.target.value })}
                       placeholder="8809617613541"
                     />
-                  </div>
-                  <div className="space-y-2 md:col-span-2">
-                    <Label>Base URL</Label>
-                    <Input
-                      value={bulkSMSBDForm.baseUrl}
-                      onChange={(e) => setBulkSMSBDForm({ ...bulkSMSBDForm, baseUrl: e.target.value })}
-                      placeholder="https://bulksmsbd.net/api"
-                    />
+                    <p className="text-xs text-muted-foreground">Your approved Sender ID from BulkSMSBD</p>
                   </div>
                 </div>
               </div>
@@ -532,11 +691,31 @@ export default function SMSSettingsPage() {
                     'Save Configuration'
                   )}
                 </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleCheckBulkBalance}
+                  disabled={!bulkSMSBDForm.apiKey || isLoadingBulkBalance}
+                >
+                  {isLoadingBulkBalance ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : null}
+                  Refresh Balance
+                </Button>
               </div>
+
+              {/* API Info */}
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>API Endpoint:</strong> http://bulksmsbd.net/api/smsapi<br/>
+                  <strong>Phone Format:</strong> 8801XXXXXXXXX (must include country code)
+                </AlertDescription>
+              </Alert>
             </CardContent>
           </Card>
         </TabsContent>
 
+        {/* Twilio Tab */}
         <TabsContent value="twilio">
           <Card>
             <CardHeader>
@@ -666,6 +845,7 @@ export default function SMSSettingsPage() {
         </TabsContent>
       </Tabs>
 
+      {/* Test SMS Card */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
@@ -681,7 +861,7 @@ export default function SMSSettingsPage() {
               <Input
                 value={testPhone}
                 onChange={(e) => setTestPhone(e.target.value)}
-                placeholder="01XXXXXXXXX or +8801XXXXXXXXX"
+                placeholder="01XXXXXXXXX or 8801XXXXXXXXX"
               />
             </div>
             <div className="space-y-2 md:col-span-2">
@@ -693,16 +873,30 @@ export default function SMSSettingsPage() {
               />
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <Button
-              variant="outline"
-              disabled={!alphaSMSForm.isEnabled && !bulkSMSBDForm.isEnabled && !twilioForm.isEnabled}
+              className="btn-primary"
+              onClick={handleSendTestSMS}
+              disabled={!hasConfiguredGateway || isSendingTest}
             >
-              <Send className="w-4 h-4 mr-2" />
-              Send Test SMS
+              {isSendingTest ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 mr-2" />
+                  Send Test SMS
+                </>
+              )}
             </Button>
-            {!alphaSMSForm.isEnabled && !bulkSMSBDForm.isEnabled && !twilioForm.isEnabled && (
-              <span className="text-sm text-muted-foreground">Enable at least one SMS gateway to send test messages</span>
+            {!hasConfiguredGateway ? (
+              <span className="text-sm text-muted-foreground">Enter API credentials for at least one gateway to send test messages</span>
+            ) : (
+              <Badge variant="outline" className="text-green-600 border-green-600">
+                Using: {getActiveGatewayName()}
+              </Badge>
             )}
           </div>
         </CardContent>

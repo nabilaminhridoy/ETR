@@ -7,7 +7,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { motion } from 'framer-motion'
-import { Eye, EyeOff, Mail, Lock, User, Phone, Upload, ArrowLeft, Loader2, AlertCircle } from 'lucide-react'
+import { Eye, EyeOff, Mail, Lock, User, Phone, Upload, ArrowLeft, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -35,6 +35,7 @@ interface LoginSettings {
   registrationEnabled: boolean
   emailVerificationRequired: boolean
   phoneVerificationRequired: boolean
+  otpDeliveryMethod: string // 'email' | 'sms' | 'both'
   passwordMinLength: string
   passwordRequireUppercase: boolean
   passwordRequireLowercase: boolean
@@ -49,6 +50,7 @@ const defaultLoginSettings: LoginSettings = {
   registrationEnabled: true,
   emailVerificationRequired: true,
   phoneVerificationRequired: true,
+  otpDeliveryMethod: 'both',
   passwordMinLength: '8',
   passwordRequireUppercase: true,
   passwordRequireLowercase: true,
@@ -68,10 +70,13 @@ export default function RegisterPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [profilePreview, setProfilePreview] = useState<string | null>(null)
   const [passwordErrors, setPasswordErrors] = useState<string[]>([])
   const [loginSettings, setLoginSettings] = useState<LoginSettings>(defaultLoginSettings)
   const [loadingSettings, setLoadingSettings] = useState(true)
+  const [emailVerified, setEmailVerified] = useState(false)
+  const [phoneVerified, setPhoneVerified] = useState(false)
 
   // Fetch login settings on mount
   useEffect(() => {
@@ -188,28 +193,58 @@ export default function RegisterPage() {
   const handleStepOne = async (data: StepOneValues) => {
     setIsLoading(true)
     try {
-      const response = await fetch('/api/auth/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: data.email, name: data.name, type: 'register' }),
-      })
-
-      const result = await response.json()
-
-      if (response.ok) {
-        setEmail(data.email)
-        setStep(2)
-        toast({
-          title: 'OTP Sent',
-          description: 'Please check your email for the verification code.',
+      // Send OTP for email verification if required
+      if (loginSettings.emailVerificationRequired) {
+        const emailResponse = await fetch('/api/auth/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: data.email, name: data.name, type: 'register', channel: 'email' }),
         })
-      } else {
-        toast({
-          title: 'Error',
-          description: result.error || 'Failed to send OTP',
-          variant: 'destructive',
-        })
+
+        if (!emailResponse.ok) {
+          const result = await emailResponse.json()
+          toast({
+            title: 'Error',
+            description: result.error || 'Failed to send email OTP',
+            variant: 'destructive',
+          })
+          setIsLoading(false)
+          return
+        }
       }
+
+      // Send OTP for phone verification if required
+      if (loginSettings.phoneVerificationRequired) {
+        const phoneResponse = await fetch('/api/auth/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: data.phone, name: data.name, type: 'register', channel: 'sms' }),
+        })
+
+        if (!phoneResponse.ok) {
+          const result = await phoneResponse.json()
+          toast({
+            title: 'Error',
+            description: result.error || 'Failed to send SMS OTP',
+            variant: 'destructive',
+          })
+          setIsLoading(false)
+          return
+        }
+      }
+
+      setEmail(data.email)
+      setPhone(data.phone)
+      setStep(2)
+      
+      const messages = []
+      if (loginSettings.emailVerificationRequired) messages.push('email')
+      if (loginSettings.phoneVerificationRequired) messages.push('phone')
+      
+      toast({
+        title: 'OTP Sent',
+        description: `Please check your ${messages.join(' and ')} for the verification code.`,
+      })
     } catch {
       toast({
         title: 'Error',
@@ -224,25 +259,59 @@ export default function RegisterPage() {
   const handleStepTwo = async (data: StepTwoValues) => {
     setIsLoading(true)
     try {
-      const response = await fetch('/api/auth/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp: data.otp, type: 'register' }),
-      })
+      // Verify email OTP if required
+      if (loginSettings.emailVerificationRequired && !emailVerified) {
+        const emailResponse = await fetch('/api/auth/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, otp: data.otp, type: 'register' }),
+        })
 
-      const result = await response.json()
+        if (emailResponse.ok) {
+          setEmailVerified(true)
+        } else {
+          const result = await emailResponse.json()
+          toast({
+            title: 'Email Verification Failed',
+            description: result.error || 'Invalid OTP for email',
+            variant: 'destructive',
+          })
+          setIsLoading(false)
+          return
+        }
+      }
 
-      if (response.ok) {
+      // Verify phone OTP if required
+      if (loginSettings.phoneVerificationRequired && !phoneVerified) {
+        const phoneResponse = await fetch('/api/auth/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, otp: data.otp, type: 'register' }),
+        })
+
+        if (phoneResponse.ok) {
+          setPhoneVerified(true)
+        } else {
+          const result = await phoneResponse.json()
+          toast({
+            title: 'Phone Verification Failed',
+            description: result.error || 'Invalid OTP for phone',
+            variant: 'destructive',
+          })
+          setIsLoading(false)
+          return
+        }
+      }
+
+      // Check if all required verifications are done
+      const emailDone = !loginSettings.emailVerificationRequired || emailVerified
+      const phoneDone = !loginSettings.phoneVerificationRequired || phoneVerified
+
+      if (emailDone && phoneDone) {
         setStep(3)
         toast({
           title: 'Verified',
-          description: 'Email verified successfully. Please set your password.',
-        })
-      } else {
-        toast({
-          title: 'Error',
-          description: result.error || 'Invalid OTP',
-          variant: 'destructive',
+          description: 'Verification successful. Please set your password.',
         })
       }
     } catch {
@@ -268,7 +337,7 @@ export default function RegisterPage() {
       const formData = new FormData()
       formData.append('name', stepOneForm.getValues('name'))
       formData.append('email', email)
-      formData.append('phone', stepOneForm.getValues('phone'))
+      formData.append('phone', phone)
       formData.append('password', data.password)
       if (data.profileImage) {
         formData.append('profileImage', data.profileImage)
@@ -327,6 +396,15 @@ export default function RegisterPage() {
     )
   }
 
+  // Determine what needs verification based on otpDeliveryMethod and verification requirements
+  const needsEmailVerification = loginSettings.emailVerificationRequired && 
+    (loginSettings.otpDeliveryMethod === 'email' || loginSettings.otpDeliveryMethod === 'both')
+  const needsPhoneVerification = loginSettings.phoneVerificationRequired && 
+    (loginSettings.otpDeliveryMethod === 'sms' || loginSettings.otpDeliveryMethod === 'both')
+  const verificationSteps = []
+  if (needsEmailVerification) verificationSteps.push('email')
+  if (needsPhoneVerification) verificationSteps.push('phone')
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-accent/5 py-12 px-4">
       <motion.div
@@ -352,7 +430,7 @@ export default function RegisterPage() {
             <CardTitle className="text-2xl">Create Account</CardTitle>
             <CardDescription>
               {step === 1 && 'Enter your details to get started'}
-              {step === 2 && `Enter the OTP sent to ${email}`}
+              {step === 2 && `Enter the OTP sent to your ${verificationSteps.join(' and ')}`}
               {step === 3 && 'Set your password and profile picture'}
             </CardDescription>
           </CardHeader>
@@ -399,7 +477,7 @@ export default function RegisterPage() {
                     name="email"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Email</FormLabel>
+                        <FormLabel>Email {needsEmailVerification && '(will be verified)'}</FormLabel>
                         <FormControl>
                           <div className="relative">
                             <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -416,7 +494,7 @@ export default function RegisterPage() {
                     name="phone"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Phone Number</FormLabel>
+                        <FormLabel>Phone Number {needsPhoneVerification && '(will be verified)'}</FormLabel>
                         <FormControl>
                           <div className="relative">
                             <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -439,6 +517,32 @@ export default function RegisterPage() {
             {step === 2 && (
               <Form {...stepTwoForm}>
                 <form onSubmit={stepTwoForm.handleSubmit(handleStepTwo)} className="space-y-4">
+                  {/* Show verification status */}
+                  <div className="space-y-2 mb-4">
+                    {needsEmailVerification && (
+                      <div className="flex items-center gap-2 p-2 rounded bg-muted">
+                        {emailVerified ? (
+                          <CheckCircle2 className="w-4 h-4 text-green-600" />
+                        ) : (
+                          <Mail className="w-4 h-4 text-muted-foreground" />
+                        )}
+                        <span className="text-sm">{email}</span>
+                        {emailVerified && <span className="text-xs text-green-600 ml-auto">Verified</span>}
+                      </div>
+                    )}
+                    {needsPhoneVerification && (
+                      <div className="flex items-center gap-2 p-2 rounded bg-muted">
+                        {phoneVerified ? (
+                          <CheckCircle2 className="w-4 h-4 text-green-600" />
+                        ) : (
+                          <Phone className="w-4 h-4 text-muted-foreground" />
+                        )}
+                        <span className="text-sm">{phone}</span>
+                        {phoneVerified && <span className="text-xs text-green-600 ml-auto">Verified</span>}
+                      </div>
+                    )}
+                  </div>
+
                   <FormField
                     control={stepTwoForm.control}
                     name="otp"

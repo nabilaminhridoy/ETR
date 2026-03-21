@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { motion } from 'framer-motion'
-import { User, Mail, Phone, MapPin, Lock, Eye, EyeOff, Upload, Loader2 } from 'lucide-react'
+import { User, Mail, Phone, MapPin, Lock, Eye, EyeOff, Upload, Loader2, CheckCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,6 +18,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { useAuthStore } from '@/store'
 import { validatePassword } from '@/lib/utils'
@@ -39,18 +40,21 @@ const passwordSchema = z.object({
 
 export default function ProfilePage() {
   const { toast } = useToast()
-  const { user, setUser } = useAuthStore()
-  const [profilePreview, setProfilePreview] = useState<string | null>(user?.profileImage || null)
+  const { user, token, setUser } = useAuthStore()
+  const [profilePreview, setProfilePreview] = useState<string | null>(null)
+  const [email, setEmail] = useState<string>('')
+  const [isEmailVerified, setIsEmailVerified] = useState<boolean>(false)
   const [showPassword, setShowPassword] = useState(false)
   const [isLoadingProfile, setIsLoadingProfile] = useState(false)
   const [isLoadingPassword, setIsLoadingPassword] = useState(false)
+  const [isLoadingData, setIsLoadingData] = useState(true)
   const [passwordErrors, setPasswordErrors] = useState<string[]>([])
 
   const profileForm = useForm({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      name: user?.name || '',
-      phone: user?.phone || '',
+      name: '',
+      phone: '',
       address: '',
     },
   })
@@ -63,6 +67,77 @@ export default function ProfilePage() {
       confirmPassword: '',
     },
   })
+
+  // Fetch profile data from database
+  useEffect(() => {
+    const fetchProfile = async () => {
+      // First, set data from auth store if available
+      if (user) {
+        profileForm.reset({
+          name: user.name || '',
+          phone: user.phone || '',
+          address: '',
+        })
+        setEmail(user.email || '')
+        setIsEmailVerified(user.isEmailVerified || false)
+        if (user.profileImage) {
+          setProfilePreview(user.profileImage)
+        }
+      }
+
+      if (!token) {
+        setIsLoadingData(false)
+        return
+      }
+
+      try {
+        const response = await fetch('/api/user/profile', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          const userData = data.user
+          
+          // Update form with database values
+          profileForm.reset({
+            name: userData.name || '',
+            phone: userData.phone || '',
+            address: userData.address || '',
+          })
+
+          // Set email separately (not in form since it's read-only)
+          setEmail(userData.email || '')
+          setIsEmailVerified(userData.isEmailVerified || false)
+
+          // Set profile image preview
+          if (userData.profileImage) {
+            setProfilePreview(userData.profileImage)
+          }
+
+          // Update auth store with latest data
+          setUser({
+            id: userData.id,
+            name: userData.name,
+            email: userData.email,
+            phone: userData.phone,
+            profileImage: userData.profileImage,
+            role: userData.role,
+            isVerified: userData.isVerified,
+            isEmailVerified: userData.isEmailVerified,
+          })
+        }
+      } catch (error) {
+        console.error('Failed to fetch profile:', error)
+      } finally {
+        setIsLoadingData(false)
+      }
+    }
+
+    fetchProfile()
+  }, [token, profileForm, setUser, user])
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -90,6 +165,9 @@ export default function ProfilePage() {
 
       const response = await fetch('/api/user/profile', {
         method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
         body: formData,
       })
 
@@ -97,6 +175,7 @@ export default function ProfilePage() {
 
       if (response.ok) {
         setUser(result.user)
+        setProfilePreview(result.user.profileImage || null)
         toast({
           title: 'Success',
           description: 'Profile updated successfully',
@@ -130,7 +209,10 @@ export default function ProfilePage() {
     try {
       const response = await fetch('/api/user/password', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify(data),
       })
 
@@ -142,6 +224,7 @@ export default function ProfilePage() {
           description: 'Password changed successfully',
         })
         passwordForm.reset()
+        setPasswordErrors([])
       } else {
         toast({
           title: 'Error',
@@ -158,6 +241,17 @@ export default function ProfilePage() {
     } finally {
       setIsLoadingPassword(false)
     }
+  }
+
+  if (isLoadingData) {
+    return (
+      <div className="max-w-3xl mx-auto flex items-center justify-center min-h-[400px]">
+        <div className="flex items-center gap-2">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span>Loading profile...</span>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -181,7 +275,7 @@ export default function ProfilePage() {
               <div className="flex items-center gap-4">
                 <Avatar className="w-20 h-20">
                   <AvatarImage src={profilePreview || ''} />
-                  <AvatarFallback className="text-2xl">{user?.name?.charAt(0) || 'U'}</AvatarFallback>
+                  <AvatarFallback className="text-2xl">{profileForm.watch('name')?.charAt(0) || 'U'}</AvatarFallback>
                 </Avatar>
                 <div>
                   <label className="cursor-pointer">
@@ -236,6 +330,38 @@ export default function ProfilePage() {
                 />
               </div>
 
+              {/* Email Field - Display Only (separate from form) */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    value={email}
+                    readOnly
+                    className="pl-10 pr-28 bg-muted/50 cursor-not-allowed"
+                    title="Email cannot be changed. Contact support if needed."
+                  />
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    {isEmailVerified ? (
+                      <Badge variant="secondary" className="text-xs gap-1 bg-green-100 text-green-700 hover:bg-green-100">
+                        <CheckCircle className="w-3 h-3" />
+                        Verified
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="text-xs gap-1 bg-yellow-100 text-yellow-700 hover:bg-yellow-100">
+                        Not Verified
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Email cannot be changed. Contact support if you need to update your email.
+                </p>
+              </div>
+
+              {/* Address Field */}
               <FormField
                 control={profileForm.control}
                 name="address"
@@ -252,14 +378,6 @@ export default function ProfilePage() {
                   </FormItem>
                 )}
               />
-
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Mail className="w-4 h-4" />
-                <span>{user?.email}</span>
-                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
-                  {user?.isEmailVerified ? 'Verified' : 'Not verified'}
-                </span>
-              </div>
 
               <Button type="submit" className="btn-primary" disabled={isLoadingProfile}>
                 {isLoadingProfile ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}

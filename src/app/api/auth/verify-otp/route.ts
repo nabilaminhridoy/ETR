@@ -4,17 +4,20 @@ import { verifyOTP } from '@/lib/otp-store'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { email, otp, type } = body
+    const { email, phone, otp, type } = body
 
-    if (!email || !otp || !type) {
+    // Support both email and phone
+    const destination = email || phone
+
+    if (!destination || !otp || !type) {
       return NextResponse.json(
-        { error: 'Email, OTP, and type are required' },
+        { error: 'Email/Phone, OTP, and type are required' },
         { status: 400 }
       )
     }
 
     // Verify OTP
-    const result = verifyOTP(email, otp, type)
+    const result = verifyOTP(destination, otp, type)
 
     if (!result.valid) {
       return NextResponse.json(

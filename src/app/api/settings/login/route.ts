@@ -15,6 +15,7 @@ export async function GET() {
             'login_registration_enabled',
             'login_email_verification_required',
             'login_phone_verification_required',
+            'login_otp_delivery_method',
             'login_password_min_length',
             'login_password_require_uppercase',
             'login_password_require_lowercase',
@@ -34,6 +35,7 @@ export async function GET() {
       registrationEnabled: true,
       emailVerificationRequired: true,
       phoneVerificationRequired: true,
+      otpDeliveryMethod: 'both',
       passwordMinLength: '8',
       passwordRequireUppercase: true,
       passwordRequireLowercase: true,
@@ -63,6 +65,9 @@ export async function GET() {
           break
         case 'login_phone_verification_required':
           loginSettings.phoneVerificationRequired = setting.value === 'true'
+          break
+        case 'login_otp_delivery_method':
+          loginSettings.otpDeliveryMethod = setting.value
           break
         case 'login_password_min_length':
           loginSettings.passwordMinLength = setting.value

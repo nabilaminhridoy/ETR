@@ -92,13 +92,17 @@ export default function LoginPage() {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          email: data.email,
+          password: data.password,
+          rememberMe: data.rememberMe || false,
+        }),
       })
 
       const result = await response.json()
 
       if (response.ok) {
-        login(result.user, result.token)
+        login(result.user, result.token, result.expiresAt)
         toast({
           title: 'Welcome back!',
           description: 'You have successfully logged in.',
@@ -234,16 +238,18 @@ export default function LoginPage() {
                   control={form.control}
                   name="rememberMe"
                   render={({ field }) => (
-                    <FormItem className="flex items-center space-x-2">
-                      <FormControl>
-                        <Checkbox
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                      <FormLabel className="text-sm font-normal cursor-pointer">
-                        Remember me
-                      </FormLabel>
+                    <FormItem>
+                      <div className="flex items-center space-x-2">
+                        <FormControl>
+                          <Checkbox
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                        <FormLabel className="text-sm font-normal cursor-pointer">
+                          Remember me for 30 days
+                        </FormLabel>
+                      </div>
                     </FormItem>
                   )}
                 />

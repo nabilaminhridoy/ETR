@@ -63,7 +63,9 @@ export async function POST(request: NextRequest) {
         email: user.email,
         role: user.role,
         profileImage: user.profileImage,
+        isVerified: user.isVerified,
       },
+      token: sessionToken, // Return token in response for frontend storage
     })
 
     response.cookies.set('admin_session', sessionToken, {

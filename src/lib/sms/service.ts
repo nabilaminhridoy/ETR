@@ -1,6 +1,6 @@
 /**
  * SMS Service (Server-side)
- * Supports: Alpha SMS, BulkSMSBD, Twilio
+ * Supports: Alpha SMS (sms.net.bd), BulkSMSBD, Twilio
  */
 
 import { db } from '@/lib/db'
@@ -10,10 +10,11 @@ import {
   AlphaSMSConfig,
   BulkSMSBDConfig,
   TwilioConfig,
-  SMS_GATEWAY_URLS,
   ALPHA_SMS_DEFAULTS,
   BULKSMSBD_DEFAULTS,
   TWILIO_DEFAULTS,
+  ALPHA_SMS_ERRORS,
+  BULKSMSBD_ERRORS,
 } from './config'
 
 /**
@@ -91,7 +92,8 @@ export async function getEnabledSMSGateway(): Promise<SMSGatewayType | null> {
 }
 
 /**
- * Send SMS via Alpha SMS
+ * Send SMS via Alpha SMS (sms.net.bd)
+ * API Documentation: https://sms.net.bd/
  */
 export async function sendAlphaSMS(
   to: string,
@@ -99,29 +101,39 @@ export async function sendAlphaSMS(
   config: AlphaSMSConfig
 ): Promise<SMSResponse> {
   try {
-    const url = new URL(config.baseUrl || ALPHA_SMS_DEFAULTS.baseUrl)
-    url.searchParams.set('h', config.apiKey)
-    url.searchParams.set('op', 'pv')
-    url.searchParams.set('to', to)
-    url.searchParams.set('msg', message)
-    url.searchParams.set('sender', config.senderId || ALPHA_SMS_DEFAULTS.senderId)
+    // Format phone number (remove + prefix for Alpha SMS)
+    const formattedPhone = to.replace('+', '')
 
-    const response = await fetch(url.toString(), {
-      method: 'GET',
+    const params = new URLSearchParams({
+      api_key: config.apiKey,
+      msg: message,
+      to: formattedPhone,
+    })
+
+    // Add sender ID if provided
+    if (config.senderId) {
+      params.append('sender_id', config.senderId)
+    }
+
+    const response = await fetch(ALPHA_SMS_DEFAULTS.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: params.toString(),
     })
 
     const data = await response.json()
 
-    if (data.status === 'OK') {
+    if (data.error === 0) {
       return {
         success: true,
-        messageId: data.log?.[0]?.messageId,
-        balance: data.creditBalance,
+        messageId: data.data?.request_id?.toString(),
       }
     } else {
       return {
         success: false,
-        error: data.error || 'Failed to send SMS via Alpha SMS',
+        error: ALPHA_SMS_ERRORS[data.error] || `Error code: ${data.error}`,
       }
     }
   } catch (error) {
@@ -135,6 +147,7 @@ export async function sendAlphaSMS(
 
 /**
  * Send SMS via BulkSMSBD
+ * API Documentation: https://bulksmsbd.net/
  */
 export async function sendBulkSMSBD(
   to: string,
@@ -142,31 +155,34 @@ export async function sendBulkSMSBD(
   config: BulkSMSBDConfig
 ): Promise<SMSResponse> {
   try {
-    const url = `${config.baseUrl || BULKSMSBD_DEFAULTS.baseUrl}/smsapi`
-    
+    // Format phone number for BulkSMSBD (must start with 880)
+    let formattedPhone = to.replace('+', '')
+    if (formattedPhone.startsWith('01')) {
+      formattedPhone = '880' + formattedPhone.substring(1)
+    }
+
     const params = new URLSearchParams({
       api_key: config.apiKey,
       senderid: config.senderId || BULKSMSBD_DEFAULTS.senderId,
-      number: to,
+      number: formattedPhone,
       message: message,
     })
 
-    const response = await fetch(`${url}?${params.toString()}`, {
+    const response = await fetch(`${BULKSMSBD_DEFAULTS.endpoint}?${params.toString()}`, {
       method: 'GET',
     })
 
     const data = await response.json()
 
-    if (data.response_code === 202) {
+    if (data.response_code === 202 || data.response_code === '202') {
       return {
         success: true,
         messageId: data.messageId,
-        balance: data.remainingBalance,
       }
     } else {
       return {
         success: false,
-        error: data.error_message || `Error code: ${data.response_code}`,
+        error: BULKSMSBD_ERRORS[data.response_code] || data.error_message || `Error code: ${data.response_code}`,
       }
     }
   } catch (error) {
@@ -293,7 +309,7 @@ export async function sendSMS(
  */
 export async function checkSMSBalance(gateway: SMSGatewayType): Promise<{
   success: boolean
-  balance?: number
+  balance?: string
   error?: string
 }> {
   const config = await getSMSGatewayConfig(gateway)
@@ -309,39 +325,29 @@ export async function checkSMSBalance(gateway: SMSGatewayType): Promise<{
     switch (gateway) {
       case 'alphasms': {
         const creds = config.credentials as unknown as AlphaSMSConfig
-        const url = new URL(creds.baseUrl || ALPHA_SMS_DEFAULTS.baseUrl)
-        url.searchParams.set('h', creds.apiKey)
-        url.searchParams.set('op', 'balance')
-        
-        const response = await fetch(url.toString())
+        const response = await fetch(`${ALPHA_SMS_DEFAULTS.balanceEndpoint}?api_key=${creds.apiKey}`)
         const data = await response.json()
         
-        if (data.status === 'OK') {
-          return { success: true, balance: data.creditBalance }
+        if (data.error === 0) {
+          return { success: true, balance: data.data?.balance || '0.0000' }
         }
-        return { success: false, error: data.error }
+        return { success: false, error: ALPHA_SMS_ERRORS[data.error] || `Error code: ${data.error}` }
       }
       
       case 'bulksmsbd': {
         const creds = config.credentials as unknown as BulkSMSBDConfig
-        const url = `${creds.baseUrl || BULKSMSBD_DEFAULTS.baseUrl}/getBalance`
-        
-        const params = new URLSearchParams({
-          api_key: creds.apiKey,
-        })
-        
-        const response = await fetch(`${url}?${params.toString()}`)
+        const response = await fetch(`${BULKSMSBD_DEFAULTS.balanceEndpoint}?api_key=${creds.apiKey}`)
         const data = await response.json()
         
-        if (data.response_code === 202) {
-          return { success: true, balance: data.balance }
+        if (data.response_code === 202 || data.response_code === '202') {
+          return { success: true, balance: data.balance || '0' }
         }
-        return { success: false, error: data.error_message }
+        return { success: false, error: BULKSMSBD_ERRORS[data.response_code] || data.error_message || 'Failed to get balance' }
       }
       
       case 'twilio':
         // Twilio doesn't have a simple balance check
-        return { success: true, balance: 0 }
+        return { success: true, balance: 'N/A' }
       
       default:
         return { success: false, error: 'Invalid gateway' }

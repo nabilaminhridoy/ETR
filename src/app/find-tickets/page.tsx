@@ -360,7 +360,7 @@ function FindTicketsContent() {
                                 {formatPrice(ticket.sellingPrice)}
                               </p>
                             </div>
-                            <Link href={`/find-tickets/${ticket.id}`}>
+                            <Link href={`/find-tickets/${ticket.ticketId}`}>
                               <Button size="sm" className="btn-primary">
                                 View
                               </Button>

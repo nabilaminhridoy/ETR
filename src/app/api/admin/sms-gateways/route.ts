@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   try {
     const gateways = ['alphasms', 'bulksmsbd', 'twilio']
-    const results: Record<string, any> = {}
+    const results: Record<string, unknown> = {}
 
     for (const gateway of gateways) {
       const result = await db.$queryRaw`
@@ -27,7 +27,7 @@ export async function GET() {
           id: '',
           name: gateway,
           isEnabled: false,
-          isSandbox: true,
+          isSandbox: gateway === 'twilio', // Only Twilio has sandbox mode
           credentials: getDefaultCredentials(gateway),
         }
       } else {
@@ -72,8 +72,8 @@ export async function POST(request: NextRequest) {
       if (gateway === 'alphasms' && (!credentials?.apiKey)) {
         return NextResponse.json({ error: 'API Key is required for Alpha SMS' }, { status: 400 })
       }
-      if (gateway === 'bulksmsbd' && (!credentials?.apiKey)) {
-        return NextResponse.json({ error: 'API Key is required for BulkSMSBD' }, { status: 400 })
+      if (gateway === 'bulksmsbd' && (!credentials?.apiKey || !credentials?.senderId)) {
+        return NextResponse.json({ error: 'API Key and Sender ID are required for BulkSMSBD' }, { status: 400 })
       }
       if (gateway === 'twilio' && (!credentials?.accountSid || !credentials?.authToken || !credentials?.fromNumber)) {
         return NextResponse.json({ error: 'Account SID, Auth Token, and From Number are required for Twilio' }, { status: 400 })
@@ -82,6 +82,9 @@ export async function POST(request: NextRequest) {
 
     const now = new Date().toISOString()
     const credentialsJson = JSON.stringify(credentials || {})
+
+    // Only Twilio has sandbox mode
+    const actualIsSandbox = gateway === 'twilio' ? (isSandbox || false) : false
 
     // Check if gateway exists
     const existing = await db.$queryRaw`
@@ -93,7 +96,7 @@ export async function POST(request: NextRequest) {
       await db.$executeRaw`
         UPDATE SMSGateway 
         SET isEnabled = ${isEnabled ? 1 : 0}, 
-            isSandbox = ${isSandbox ? 1 : 0}, 
+            isSandbox = ${actualIsSandbox ? 1 : 0}, 
             credentials = ${credentialsJson},
             updatedAt = ${now}
         WHERE name = ${gateway}
@@ -102,7 +105,7 @@ export async function POST(request: NextRequest) {
       // Create new
       await db.$executeRaw`
         INSERT INTO SMSGateway (id, name, isEnabled, isSandbox, credentials, createdAt, updatedAt)
-        VALUES (${Date.now().toString(36)}, ${gateway}, ${isEnabled ? 1 : 0}, ${isSandbox ? 1 : 0}, ${credentialsJson}, ${now}, ${now})
+        VALUES (${Date.now().toString(36)}, ${gateway}, ${isEnabled ? 1 : 0}, ${actualIsSandbox ? 1 : 0}, ${credentialsJson}, ${now}, ${now})
       `
     }
 
@@ -122,15 +125,15 @@ function getDefaultCredentials(gateway: string): Record<string, string> {
       return {
         apiKey: '',
         senderId: '8809617613541',
-        baseUrl: 'https://api.alphasms.net/index.php?app=ws',
         label: 'Alpha SMS',
+        endpoint: 'https://api.sms.net.bd/sendsms',
       }
     case 'bulksmsbd':
       return {
         apiKey: '',
         senderId: '8809617613541',
-        baseUrl: 'https://bulksmsbd.net/api',
         label: 'BulkSMSBD',
+        endpoint: 'http://bulksmsbd.net/api/smsapi',
       }
     case 'twilio':
       return {

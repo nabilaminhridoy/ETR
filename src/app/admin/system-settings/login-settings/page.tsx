@@ -9,11 +9,13 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2, Key, Shield, Smartphone } from 'lucide-react'
+import { Loader2, Key, Shield, Smartphone, Mail, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 interface LoginSettings {
   otpEnabled: boolean
-  otpProvider: string
+  emailOtpProvider: string
+  smsOtpProvider: string
   otpExpiry: string
   maxOtpAttempts: string
   socialLoginEnabled: boolean
@@ -22,6 +24,7 @@ interface LoginSettings {
   registrationEnabled: boolean
   emailVerificationRequired: boolean
   phoneVerificationRequired: boolean
+  otpDeliveryMethod: string // 'email' | 'sms' | 'both'
   passwordMinLength: string
   passwordRequireUppercase: boolean
   passwordRequireLowercase: boolean
@@ -31,7 +34,8 @@ interface LoginSettings {
 
 const defaultSettings: LoginSettings = {
   otpEnabled: true,
-  otpProvider: 'twilio',
+  emailOtpProvider: 'email',
+  smsOtpProvider: 'alphasms',
   otpExpiry: '5',
   maxOtpAttempts: '3',
   socialLoginEnabled: true,
@@ -40,6 +44,7 @@ const defaultSettings: LoginSettings = {
   registrationEnabled: true,
   emailVerificationRequired: true,
   phoneVerificationRequired: true,
+  otpDeliveryMethod: 'both',
   passwordMinLength: '8',
   passwordRequireUppercase: true,
   passwordRequireLowercase: true,
@@ -142,32 +147,77 @@ export default function LoginSettingsPage() {
               <Smartphone className="w-5 h-5" />
               OTP Verification
             </CardTitle>
-            <CardDescription>Configure OTP settings for phone verification</CardDescription>
+            <CardDescription>Configure OTP settings for verification</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label>Enable OTP Login</Label>
-                <p className="text-sm text-muted-foreground">Allow users to login with OTP</p>
+                <Label>Enable OTP Verification</Label>
+                <p className="text-sm text-muted-foreground">Allow users to verify with OTP</p>
               </div>
               <Switch
                 checked={settings.otpEnabled}
                 onCheckedChange={(checked) => setSettings({ ...settings, otpEnabled: checked })}
               />
             </div>
+
+            {/* OTP Delivery Method */}
             <div className="space-y-2">
-              <Label>OTP Provider</Label>
-              <Select value={settings.otpProvider} onValueChange={(value) => setSettings({ ...settings, otpProvider: value })}>
+              <Label>OTP Delivery Method</Label>
+              <Select value={settings.otpDeliveryMethod} onValueChange={(value) => setSettings({ ...settings, otpDeliveryMethod: value })}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="twilio">Twilio</SelectItem>
-                  <SelectItem value="msg91">MSG91</SelectItem>
-                  <SelectItem value="bulksmsbd">BulkSMSBD</SelectItem>
+                  <SelectItem value="email">
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-4 h-4" />
+                      Email Only
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="sms">
+                    <div className="flex items-center gap-2">
+                      <Smartphone className="w-4 h-4" />
+                      SMS Only
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="both">
+                    <div className="flex items-center gap-2">
+                      <div className="flex -space-x-1">
+                        <Mail className="w-4 h-4" />
+                        <Smartphone className="w-4 h-4" />
+                      </div>
+                      Both Email & SMS
+                    </div>
+                  </SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                Choose how to deliver OTP codes to users
+              </p>
             </div>
+
+            {/* SMS Gateway Selection */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Smartphone className="w-4 h-4" />
+                SMS Gateway
+              </Label>
+              <Select value={settings.smsOtpProvider} onValueChange={(value) => setSettings({ ...settings, smsOtpProvider: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="alphasms">Alpha SMS</SelectItem>
+                  <SelectItem value="bulksmsbd">BulkSMSBD</SelectItem>
+                  <SelectItem value="twilio">Twilio</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Configure gateway credentials in SMS Settings
+              </p>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="otpExpiry">OTP Expiry (minutes)</Label>
@@ -256,8 +306,11 @@ export default function LoginSettingsPage() {
             </div>
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label>Email Verification</Label>
-                <p className="text-sm text-muted-foreground">Require email verification</p>
+                <Label className="flex items-center gap-2">
+                  <Mail className="w-4 h-4" />
+                  Email Verification
+                </Label>
+                <p className="text-sm text-muted-foreground">Require email verification via OTP</p>
               </div>
               <Switch
                 checked={settings.emailVerificationRequired}
@@ -266,8 +319,11 @@ export default function LoginSettingsPage() {
             </div>
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <Label>Phone Verification</Label>
-                <p className="text-sm text-muted-foreground">Require phone verification</p>
+                <Label className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4" />
+                  Phone Verification
+                </Label>
+                <p className="text-sm text-muted-foreground">Require phone verification via SMS OTP</p>
               </div>
               <Switch
                 checked={settings.phoneVerificationRequired}
@@ -339,6 +395,37 @@ export default function LoginSettingsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Configuration Status */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5" />
+            Configuration Status
+          </CardTitle>
+          <CardDescription>Quick overview of your OTP configuration</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              <div className="space-y-2">
+                <p><strong>OTP Delivery:</strong> {
+                  settings.otpDeliveryMethod === 'email' ? 'Email only (via SMTP)' :
+                  settings.otpDeliveryMethod === 'sms' ? 'SMS only' :
+                  'Both Email & SMS'
+                }</p>
+                {(settings.otpDeliveryMethod === 'sms' || settings.otpDeliveryMethod === 'both') && (
+                  <p><strong>SMS Gateway:</strong> {settings.smsOtpProvider === 'alphasms' ? 'Alpha SMS' : settings.smsOtpProvider === 'bulksmsbd' ? 'BulkSMSBD' : 'Twilio'}</p>
+                )}
+                <p className="text-xs text-muted-foreground mt-2">
+                  Make sure to configure the corresponding settings in Mail Settings and SMS Settings.
+                </p>
+              </div>
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
     </motion.div>
   )
 }

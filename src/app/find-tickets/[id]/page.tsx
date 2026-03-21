@@ -35,38 +35,34 @@ import {
 import { cn } from '@/lib/utils'
 import { MainLayout } from '@/components/layout/main-layout'
 
-// Mock ticket data - in real app this would come from API
-const mockTicket = {
-  id: '1',
-  transportType: 'BUS',
-  transportCompany: 'Green Line Paribahan',
-  pnrNumber: 'GLP-2025-123456',
-  fromCity: 'Dhaka',
-  toCity: 'Chittagong',
-  seatNumber: 'A1',
-  classType: 'AC Business',
-  travelDate: '2025-06-20',
-  departureTime: '22:00',
-  originalPrice: 1200,
-  sellingPrice: 1000,
-  ticketImage: '/ticket-sample.jpg',
-  ticketPdf: null,
-  notes: 'Seat is window side. Good condition ticket.',
-  deliveryType: 'ONLINE_PAYMENT',
-  location: null,
-  courierService: null,
-  courierFee: null,
-  status: 'APPROVED',
+interface TicketData {
+  id: string
+  ticketId: string
+  transportType: 'BUS' | 'TRAIN' | 'LAUNCH' | 'AIR'
+  transportCompany: string
+  pnrNumber: string
+  fromCity: string
+  toCity: string
+  seatNumber: string
+  classType: string
+  travelDate: string
+  departureTime: string
+  originalPrice: number
+  sellingPrice: number
+  ticketImage: string | null
+  ticketPdf: string | null
+  notes: string | null
+  deliveryType: 'ONLINE_DELIVERY' | 'IN_PERSON' | 'COURIER'
+  location: string | null
+  courierService: string | null
+  courierFee: number | null
+  status: string
   seller: {
-    id: 's1',
-    name: 'Rahman Ahmed',
-    email: 'rahman@example.com',
-    phone: '+880171234567',
-    verified: true,
-    rating: 4.8,
-    totalSales: 25,
-    avatar: null,
-  },
+    id: string
+    name: string | null
+    profileImage: string | null
+    isVerified: boolean
+  }
 }
 
 // Payment method icons and colors mapping
@@ -138,6 +134,9 @@ interface PurchaseForm {
 
 export default function TicketDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
+  const [ticket, setTicket] = useState<TicketData | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [showPnr, setShowPnr] = useState(false)
   const [showImage, setShowImage] = useState(false)
   const [isPurchasing, setIsPurchasing] = useState(false)
@@ -159,6 +158,31 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   })
 
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Fetch ticket data
+  useEffect(() => {
+    const fetchTicket = async () => {
+      try {
+        setIsLoading(true)
+        // Use the ticket ID from URL directly (TKT-1001 format)
+        const response = await fetch(`/api/tickets/by-ticket-id/${resolvedParams.id}`)
+        const data = await response.json()
+
+        if (!response.ok) {
+          setError(data.error || 'Ticket not found')
+          return
+        }
+
+        setTicket(data.ticket)
+      } catch (err) {
+        setError('Failed to load ticket')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchTicket()
+  }, [resolvedParams.id])
 
   // Load payment methods from API
   useEffect(() => {
@@ -188,11 +212,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
   }, [])
 
   // Calculate platform fee (1% min 10 BDT)
-  const platformFee = Math.max(Math.round(mockTicket.sellingPrice * 0.01), 10)
+  const sellingPrice = ticket?.sellingPrice ?? 0
+  const platformFee = Math.max(Math.round(sellingPrice * 0.01), 10)
   const courierFee = form.deliveryType === 'COURIER' && form.courierService
     ? courierServices.find(c => c.value === form.courierService)?.fee || 0
     : 0
-  const totalAmount = mockTicket.sellingPrice + platformFee + courierFee
+  const totalAmount = sellingPrice + platformFee + courierFee
 
   const getTransportIcon = (type: string) => {
     switch (type) {
@@ -214,8 +239,49 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     }
   }
 
-  const TransportIcon = getTransportIcon(mockTicket.transportType)
-  const transportColor = getTransportColor(mockTicket.transportType)
+  const TransportIcon = ticket ? getTransportIcon(ticket.transportType) : Bus
+  const transportColor = ticket ? getTransportColor(ticket.transportType) : 'bg-slate-500'
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <MainLayout>
+        <div className="min-h-screen bg-muted/30 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+            <p className="text-muted-foreground">Loading ticket...</p>
+          </div>
+        </div>
+      </MainLayout>
+    )
+  }
+
+  // Error state
+  if (error || !ticket) {
+    return (
+      <MainLayout>
+        <div className="min-h-screen bg-muted/30 flex items-center justify-center p-4">
+          <Card className="max-w-md w-full">
+            <CardContent className="p-6 text-center">
+              <AlertCircle className="w-16 h-16 mx-auto text-destructive mb-4" />
+              <h2 className="text-xl font-bold mb-2">Ticket Not Found</h2>
+              <p className="text-muted-foreground mb-6">
+                {error || 'The ticket you are looking for does not exist or is no longer available.'}
+              </p>
+              <div className="flex flex-col gap-3">
+                <Link href="/">
+                  <Button className="w-full">Go to Home</Button>
+                </Link>
+                <Link href="/find-tickets">
+                  <Button variant="outline" className="w-full">Search Tickets</Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </MainLayout>
+    )
+  }
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {}
@@ -305,13 +371,13 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <h1 className="text-xl font-bold truncate">{mockTicket.transportCompany}</h1>
-                        <Badge variant="secondary">{mockTicket.transportType}</Badge>
+                        <h1 className="text-xl font-bold truncate">{ticket.transportCompany}</h1>
+                        <Badge variant="secondary">{ticket.transportType}</Badge>
                       </div>
                       <div className="flex items-center gap-2 text-muted-foreground">
-                        <span className="text-sm">{mockTicket.classType}</span>
+                        <span className="text-sm">{ticket.classType}</span>
                         <span>•</span>
-                        <span className="text-sm">Seat {mockTicket.seatNumber}</span>
+                        <span className="text-sm">Seat {ticket.seatNumber}</span>
                       </div>
                     </div>
                     <Badge variant="default" className="bg-green-500">
@@ -338,7 +404,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                       <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-2">
                         <MapPin className="w-6 h-6 text-primary" />
                       </div>
-                      <p className="font-semibold">{mockTicket.fromCity}</p>
+                      <p className="font-semibold">{ticket.fromCity}</p>
                       <p className="text-sm text-muted-foreground">Departure</p>
                     </div>
                     <div className="flex-1 px-4">
@@ -352,7 +418,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                       <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-2">
                         <MapPin className="w-6 h-6 text-accent" />
                       </div>
-                      <p className="font-semibold">{mockTicket.toCity}</p>
+                      <p className="font-semibold">{ticket.toCity}</p>
                       <p className="text-sm text-muted-foreground">Arrival</p>
                     </div>
                   </div>
@@ -362,14 +428,14 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                       <Calendar className="w-5 h-5 text-muted-foreground" />
                       <div>
                         <p className="text-sm text-muted-foreground">Travel Date</p>
-                        <p className="font-medium">{mockTicket.travelDate}</p>
+                        <p className="font-medium">{ticket.travelDate}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
                       <Clock className="w-5 h-5 text-muted-foreground" />
                       <div>
                         <p className="text-sm text-muted-foreground">Departure Time</p>
-                        <p className="font-medium">{mockTicket.departureTime}</p>
+                        <p className="font-medium">{ticket.departureTime}</p>
                       </div>
                     </div>
                   </div>
@@ -407,7 +473,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                       <div>
                         <p className="text-sm text-muted-foreground">PNR Number</p>
                         <p className="font-mono font-semibold">
-                          {showPnr ? mockTicket.pnrNumber : '••••••••••••'}
+                          {showPnr ? ticket.pnrNumber : '••••••••••••'}
                         </p>
                       </div>
                     </div>
@@ -459,13 +525,13 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                     </div>
                   </div>
 
-                  {mockTicket.notes && (
+                  {ticket.notes && (
                     <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
                       <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">
                         Seller&apos;s Note
                       </p>
                       <p className="text-sm text-amber-700 dark:text-amber-300">
-                        {mockTicket.notes}
+                        {ticket.notes}
                       </p>
                     </div>
                   )}
@@ -738,11 +804,11 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                   <CardContent className="space-y-3">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Original Price</span>
-                      <span className="line-through">৳{mockTicket.originalPrice}</span>
+                      <span className="line-through">৳{ticket.originalPrice}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Selling Price</span>
-                      <span className="font-medium">৳{mockTicket.sellingPrice}</span>
+                      <span className="font-medium">৳{ticket.sellingPrice}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground flex items-center gap-1">
@@ -763,7 +829,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                       <span className="text-primary">৳{totalAmount}</span>
                     </div>
                     <p className="text-xs text-muted-foreground text-center">
-                      You save ৳{mockTicket.originalPrice - mockTicket.sellingPrice} on this ticket!
+                      You save ৳{ticket.originalPrice - ticket.sellingPrice} on this ticket!
                     </p>
                   </CardContent>
                 </Card>
@@ -782,37 +848,37 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
                   <CardContent>
                     <div className="flex items-center gap-4 mb-4">
                       <Avatar className="w-14 h-14">
-                        <AvatarImage src={mockTicket.seller.avatar || ''} />
+                        <AvatarImage src={ticket.seller.avatar || ''} />
                         <AvatarFallback className="bg-primary/10 text-primary text-lg">
-                          {mockTicket.seller.name.charAt(0)}
+                          {ticket.seller.name.charAt(0)}
                         </AvatarFallback>
                       </Avatar>
                       <div>
                         <div className="flex items-center gap-2">
-                          <p className="font-semibold">{mockTicket.seller.name}</p>
-                          {mockTicket.seller.verified && (
+                          <p className="font-semibold">{ticket.seller.name}</p>
+                          {ticket.seller.verified && (
                             <Shield className="w-4 h-4 text-primary" />
                           )}
                         </div>
                         <div className="flex items-center gap-1 text-sm text-muted-foreground">
                           <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-                          <span>{mockTicket.seller.rating}</span>
+                          <span>{ticket.seller.rating}</span>
                           <span>•</span>
-                          <span>{mockTicket.seller.totalSales} sales</span>
+                          <span>{ticket.seller.totalSales} sales</span>
                         </div>
                       </div>
                     </div>
                     <div className="space-y-2 text-sm">
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <Mail className="w-4 h-4" />
-                        <span>{mockTicket.seller.email}</span>
+                        <span>{ticket.seller.email}</span>
                       </div>
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <Phone className="w-4 h-4" />
-                        <span>{mockTicket.seller.phone}</span>
+                        <span>{ticket.seller.phone}</span>
                       </div>
                     </div>
-                    {mockTicket.seller.verified && (
+                    {ticket.seller.verified && (
                       <div className="mt-4 p-3 rounded-lg bg-primary/10 flex items-center gap-2">
                         <CheckCircle2 className="w-5 h-5 text-primary" />
                         <span className="text-sm font-medium text-primary">

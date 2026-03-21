@@ -1,24 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import {
-  Ticket as TicketIcon,
-  Search,
-  Filter,
-  Eye,
-  CheckCircle,
-  XCircle,
-  Trash2,
-  MoreHorizontal,
-  Bus,
-  Train,
-  Ship,
-  Plane,
-  Download,
-  RefreshCw,
+  Search, Eye, CheckCircle, XCircle, Trash2, MoreHorizontal,
+  Bus, Train, Ship, Plane, RefreshCw, CheckCircle2, Clock,
+  FileText, Package, User, Loader2
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -54,12 +43,14 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { cn, formatPrice, formatDate } from '@/lib/utils'
+import { cn, formatPrice, formatDate, formatDateTime } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useAuthStore } from '@/store'
 
 interface Ticket {
   id: string
+  ticketId: string
+  ticketType: string
   transportType: string
   transportCompany: string
   pnrNumber: string
@@ -71,15 +62,18 @@ interface Ticket {
   classType: string
   originalPrice: number
   sellingPrice: number
-  status: string
+  deliveryType: string
   ticketImage: string | null
+  ticketPdf: string | null
   notes: string | null
+  status: string
   rejectionReason: string | null
   createdAt: string
   seller: {
     id: string
     name: string | null
     email: string
+    phone: string | null
     isVerified: boolean
   }
 }
@@ -99,15 +93,33 @@ const transportTypeColors: Record<string, string> = {
   AIR: 'bg-amber-500',
 }
 
+const transportTypeLabels: Record<string, string> = {
+  BUS: 'Bus',
+  TRAIN: 'Train',
+  LAUNCH: 'Launch',
+  AIR: 'Air',
+}
+
+const ticketTypeLabels: Record<string, string> = {
+  ONLINE_COPY: 'Online Copy',
+  COUNTER_COPY: 'Counter Copy',
+}
+
+const deliveryTypeLabels: Record<string, string> = {
+  ONLINE_DELIVERY: 'Online Delivery',
+  IN_PERSON: 'In Person',
+  COURIER: 'Courier',
+}
+
 export default function TicketsManagementPage() {
-  const searchParams = useSearchParams()
   const router = useRouter()
   const { toast } = useToast()
+  const { token } = useAuthStore()
 
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'all')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [transportFilter, setTransportFilter] = useState('all')
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
   const [showViewDialog, setShowViewDialog] = useState(false)
@@ -115,16 +127,20 @@ export default function TicketsManagementPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [rejectionReason, setRejectionReason] = useState('')
   const [processing, setProcessing] = useState(false)
+  const [autoRefresh, setAutoRefresh] = useState(true)
 
   const fetchTickets = useCallback(async () => {
-    setLoading(true)
     try {
       const params = new URLSearchParams()
       if (statusFilter !== 'all') params.set('status', statusFilter)
       if (transportFilter !== 'all') params.set('transportType', transportFilter)
       if (search) params.set('search', search)
 
-      const res = await fetch(`/api/admin/tickets?${params}`)
+      const res = await fetch(`/api/admin/tickets?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
       if (res.ok) {
         const data = await res.json()
         setTickets(data.tickets || [])
@@ -134,17 +150,32 @@ export default function TicketsManagementPage() {
     } finally {
       setLoading(false)
     }
-  }, [statusFilter, transportFilter, search])
+  }, [statusFilter, transportFilter, search, token])
 
+  // Initial fetch
   useEffect(() => {
     fetchTickets()
   }, [fetchTickets])
+
+  // Auto refresh every 10 seconds
+  useEffect(() => {
+    if (!autoRefresh) return
+    
+    const interval = setInterval(() => {
+      fetchTickets()
+    }, 10000)
+
+    return () => clearInterval(interval)
+  }, [autoRefresh, fetchTickets])
 
   const handleApprove = async (ticketId: string) => {
     setProcessing(true)
     try {
       const res = await fetch(`/api/admin/tickets/${ticketId}/approve`, {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
       })
       if (res.ok) {
         toast({ title: 'Success', description: 'Ticket approved successfully' })
@@ -170,7 +201,10 @@ export default function TicketsManagementPage() {
     try {
       const res = await fetch(`/api/admin/tickets/${selectedTicket.id}/reject`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify({ reason: rejectionReason }),
       })
       if (res.ok) {
@@ -196,6 +230,9 @@ export default function TicketsManagementPage() {
     try {
       const res = await fetch(`/api/admin/tickets/${selectedTicket.id}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
       })
       if (res.ok) {
         toast({ title: 'Success', description: 'Ticket deleted successfully' })
@@ -222,14 +259,14 @@ export default function TicketsManagementPage() {
     }
   }
 
-  const filteredTickets = tickets.filter((ticket) => {
-    const matchesSearch =
-      ticket.transportCompany.toLowerCase().includes(search.toLowerCase()) ||
-      ticket.pnrNumber.toLowerCase().includes(search.toLowerCase()) ||
-      ticket.fromCity.toLowerCase().includes(search.toLowerCase()) ||
-      ticket.toCity.toLowerCase().includes(search.toLowerCase())
-    return matchesSearch
-  })
+  const getDeliveryIcon = (type: string) => {
+    switch (type) {
+      case 'ONLINE_DELIVERY': return FileText
+      case 'IN_PERSON': return User
+      case 'COURIER': return Package
+      default: return FileText
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -240,13 +277,26 @@ export default function TicketsManagementPage() {
           <p className="text-muted-foreground">Manage all tickets listed on the platform</p>
         </div>
         <div className="flex gap-2">
+          <Button 
+            variant={autoRefresh ? 'default' : 'outline'} 
+            size="sm" 
+            onClick={() => setAutoRefresh(!autoRefresh)}
+          >
+            {autoRefresh ? (
+              <>
+                <Clock className="w-4 h-4 mr-2" />
+                Auto Refresh ON
+              </>
+            ) : (
+              <>
+                <Clock className="w-4 h-4 mr-2" />
+                Auto Refresh OFF
+              </>
+            )}
+          </Button>
           <Button variant="outline" size="sm" onClick={fetchTickets}>
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh
-          </Button>
-          <Button variant="outline" size="sm">
-            <Download className="w-4 h-4 mr-2" />
-            Export
           </Button>
         </div>
       </div>
@@ -259,7 +309,7 @@ export default function TicketsManagementPage() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by company, PNR, or route..."
+                  placeholder="Search by Ticket ID, Company, PNR, or Route..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="pl-10"
@@ -298,116 +348,165 @@ export default function TicketsManagementPage() {
       {/* Tickets Table */}
       <Card>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Ticket</TableHead>
-                <TableHead>Route</TableHead>
-                <TableHead>Travel Date</TableHead>
-                <TableHead>Price</TableHead>
-                <TableHead>Seller</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8">
-                    <div className="flex items-center justify-center gap-2">
-                      <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                      Loading tickets...
-                    </div>
-                  </TableCell>
+                  <TableHead>Ticket ID</TableHead>
+                  <TableHead>Ticket Type</TableHead>
+                  <TableHead>Transport</TableHead>
+                  <TableHead>Route</TableHead>
+                  <TableHead>Travel</TableHead>
+                  <TableHead>Delivery</TableHead>
+                  <TableHead>Price</TableHead>
+                  <TableHead>Seller</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ) : filteredTickets.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                    No tickets found
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredTickets.map((ticket) => {
-                  const Icon = getTransportIcon(ticket.transportType)
-                  return (
-                    <TableRow key={ticket.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center text-white', transportTypeColors[ticket.transportType])}>
-                            <Icon className="w-5 h-5" />
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={11} className="text-center py-8">
+                      <div className="flex items-center justify-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading tickets...
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : tickets.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                      No tickets found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  tickets.map((ticket) => {
+                    const TransportIcon = getTransportIcon(ticket.transportType)
+                    const DeliveryIcon = getDeliveryIcon(ticket.deliveryType)
+                    return (
+                      <TableRow key={ticket.id}>
+                        {/* Ticket ID */}
+                        <TableCell>
+                          <span className="font-mono text-sm font-medium bg-muted px-2 py-1 rounded">
+                            {ticket.ticketId}
+                          </span>
+                        </TableCell>
+                        
+                        {/* Ticket Type */}
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">
+                            {ticketTypeLabels[ticket.ticketType] || ticket.ticketType}
+                          </Badge>
+                        </TableCell>
+                        
+                        {/* Transport */}
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center text-white', transportTypeColors[ticket.transportType])}>
+                              <TransportIcon className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-sm">{ticket.transportCompany}</p>
+                              <p className="text-xs text-muted-foreground">{transportTypeLabels[ticket.transportType]}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium">{ticket.transportCompany}</p>
-                            <p className="text-xs text-muted-foreground">PNR: {ticket.pnrNumber}</p>
+                        </TableCell>
+                        
+                        {/* Route */}
+                        <TableCell>
+                          <p className="text-sm font-medium">{ticket.fromCity}</p>
+                          <p className="text-xs text-muted-foreground">→ {ticket.toCity}</p>
+                        </TableCell>
+                        
+                        {/* Travel */}
+                        <TableCell>
+                          <p className="text-sm">{formatDate(ticket.travelDate)}</p>
+                          <p className="text-xs text-muted-foreground">{ticket.departureTime}</p>
+                        </TableCell>
+                        
+                        {/* Delivery */}
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <DeliveryIcon className="w-4 h-4 text-muted-foreground" />
+                            <span className="text-sm">{deliveryTypeLabels[ticket.deliveryType] || ticket.deliveryType}</span>
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <p>{ticket.fromCity} → {ticket.toCity}</p>
-                        <p className="text-xs text-muted-foreground">Seat: {ticket.seatNumber}</p>
-                      </TableCell>
-                      <TableCell>
-                        <p>{formatDate(ticket.travelDate)}</p>
-                        <p className="text-xs text-muted-foreground">{ticket.departureTime}</p>
-                      </TableCell>
-                      <TableCell>
-                        <p className="font-medium">{formatPrice(ticket.sellingPrice)}</p>
-                        <p className="text-xs text-muted-foreground line-through">{formatPrice(ticket.originalPrice)}</p>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <p>{ticket.seller.name || 'N/A'}</p>
-                          {ticket.seller.isVerified && (
-                            <CheckCircle className="w-4 h-4 text-green-500" />
+                        </TableCell>
+                        
+                        {/* Price */}
+                        <TableCell>
+                          <p className="font-semibold text-primary">{formatPrice(ticket.sellingPrice)}</p>
+                          {ticket.originalPrice !== ticket.sellingPrice && (
+                            <p className="text-xs text-muted-foreground line-through">{formatPrice(ticket.originalPrice)}</p>
                           )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">{ticket.seller.email}</p>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={cn('text-white', statusColors[ticket.status])}>
-                          {ticket.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{formatDate(ticket.createdAt)}</TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreHorizontal className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => { setSelectedTicket(ticket); setShowViewDialog(true) }}>
-                              <Eye className="w-4 h-4 mr-2" />
-                              View Details
-                            </DropdownMenuItem>
-                            {ticket.status === 'PENDING' && (
-                              <>
-                                <DropdownMenuItem onClick={() => handleApprove(ticket.id)}>
-                                  <CheckCircle className="w-4 h-4 mr-2 text-green-500" />
-                                  Approve
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => { setSelectedTicket(ticket); setShowRejectDialog(true) }}>
-                                  <XCircle className="w-4 h-4 mr-2 text-red-500" />
-                                  Reject
-                                </DropdownMenuItem>
-                              </>
+                        </TableCell>
+                        
+                        {/* Seller */}
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div>
+                              <p className="text-sm font-medium">{ticket.seller.name || 'N/A'}</p>
+                              <p className="text-xs text-muted-foreground">{ticket.seller.phone || ticket.seller.email}</p>
+                            </div>
+                            {ticket.seller.isVerified && (
+                              <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
                             )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => { setSelectedTicket(ticket); setShowDeleteDialog(true) }} className="text-red-600">
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })
-              )}
-            </TableBody>
-          </Table>
+                          </div>
+                        </TableCell>
+                        
+                        {/* Status */}
+                        <TableCell>
+                          <Badge className={cn('text-white', statusColors[ticket.status])}>
+                            {ticket.status}
+                          </Badge>
+                        </TableCell>
+                        
+                        {/* Created */}
+                        <TableCell>
+                          <p className="text-sm">{formatDateTime(ticket.createdAt)}</p>
+                        </TableCell>
+                        
+                        {/* Actions */}
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreHorizontal className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => { setSelectedTicket(ticket); setShowViewDialog(true) }}>
+                                <Eye className="w-4 h-4 mr-2" />
+                                View Details
+                              </DropdownMenuItem>
+                              {ticket.status === 'PENDING' && (
+                                <>
+                                  <DropdownMenuItem onClick={() => handleApprove(ticket.id)}>
+                                    <CheckCircle className="w-4 h-4 mr-2 text-green-500" />
+                                    Approve
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => { setSelectedTicket(ticket); setShowRejectDialog(true) }}>
+                                    <XCircle className="w-4 h-4 mr-2 text-red-500" />
+                                    Reject
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => { setSelectedTicket(ticket); setShowDeleteDialog(true) }} className="text-red-600">
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -422,8 +521,16 @@ export default function TicketsManagementPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <Label className="text-muted-foreground">Ticket ID</Label>
+                  <p className="font-mono font-medium">{selectedTicket.ticketId}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Ticket Type</Label>
+                  <p className="font-medium">{ticketTypeLabels[selectedTicket.ticketType] || selectedTicket.ticketType}</p>
+                </div>
+                <div>
                   <Label className="text-muted-foreground">Transport Type</Label>
-                  <p className="font-medium">{selectedTicket.transportType}</p>
+                  <p className="font-medium">{transportTypeLabels[selectedTicket.transportType]}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Company</Label>
@@ -450,10 +557,8 @@ export default function TicketsManagementPage() {
                   <p className="font-medium">{formatDate(selectedTicket.travelDate)} at {selectedTicket.departureTime}</p>
                 </div>
                 <div>
-                  <Label className="text-muted-foreground">Status</Label>
-                  <Badge className={cn('text-white', statusColors[selectedTicket.status])}>
-                    {selectedTicket.status}
-                  </Badge>
+                  <Label className="text-muted-foreground">Delivery Type</Label>
+                  <p className="font-medium">{deliveryTypeLabels[selectedTicket.deliveryType] || selectedTicket.deliveryType}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Original Price</Label>
@@ -462,6 +567,12 @@ export default function TicketsManagementPage() {
                 <div>
                   <Label className="text-muted-foreground">Selling Price</Label>
                   <p className="font-medium text-primary">{formatPrice(selectedTicket.sellingPrice)}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Status</Label>
+                  <Badge className={cn('text-white', statusColors[selectedTicket.status])}>
+                    {selectedTicket.status}
+                  </Badge>
                 </div>
               </div>
               
@@ -490,9 +601,31 @@ export default function TicketsManagementPage() {
                 </div>
               )}
 
+              {selectedTicket.ticketPdf && (
+                <div>
+                  <Label className="text-muted-foreground">Ticket PDF</Label>
+                  <a 
+                    href={selectedTicket.ticketPdf} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-primary underline"
+                  >
+                    View PDF
+                  </a>
+                </div>
+              )}
+
               <div>
                 <Label className="text-muted-foreground">Seller</Label>
-                <p className="font-medium">{selectedTicket.seller.name} ({selectedTicket.seller.email})</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-medium">{selectedTicket.seller.name} ({selectedTicket.seller.email})</p>
+                  {selectedTicket.seller.isVerified && (
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                  )}
+                </div>
+                {selectedTicket.seller.phone && (
+                  <p className="text-sm text-muted-foreground">Phone: {selectedTicket.seller.phone}</p>
+                )}
               </div>
             </div>
           )}
